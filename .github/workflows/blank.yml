@@ -1,0 +1,53 @@
+name: Descargar y subir a repo nuevo
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: URLs de archivos (una por línea)
+        required: true
+        type: string
+      repo_name:
+        description: Nombre del repo nuevo
+        required: true
+        type: string
+      private:
+        description: Crear como privado
+        type: boolean
+        default: true
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar archivos
+        env:
+          URLS: ${{ inputs.urls }}
+        run: |
+          mkdir -p files
+          cd files
+          while IFS= read -r url; do
+            [ -z "$url" ] && continue
+            name=$(basename "${url%%\?*}")
+            echo "Descargando: $url"
+            curl -fL --retry 3 -o "$name" "$url"
+          done <<< "$URLS"
+          ls -lh
+
+      - name: Crear repo y subir
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          REPO: ${{ inputs.repo_name }}
+          PRIVATE: ${{ inputs.private }}
+        run: |
+          OWNER=$(gh api user -q .login)
+          if [ "$PRIVATE" = "true" ]; then VIS=--private; else VIS=--public; fi
+          gh repo create "$REPO" $VIS --description "Subido por workflow"
+          cd files
+          git init -q -b main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Subida automática"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/$OWNER/$REPO.git"
+          git push -u origin main
